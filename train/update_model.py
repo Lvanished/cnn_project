@@ -1,13 +1,17 @@
 import tensorflow as tf
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
-def update_model():
-    model = tf.keras.models.load_model('app/model.h5')
-    new_data = tf.keras.preprocessing.image_dataset_from_directory(
-        'train/data/train', image_size=(128, 128), batch_size=32)
-    
-    model.fit(new_data, epochs=5)
-    model.save('app/model.h5')
-    print("模型已更新并保存！")
+# 加载旧模型
+model = load_model("model.h5")
 
-if __name__ == "__main__":
-    update_model()
+# 数据路径
+train_dir = "data/train"
+
+# 数据增强
+datagen = ImageDataGenerator(rescale=1.0/255)
+train_generator = datagen.flow_from_directory(train_dir, target_size=(224, 224), batch_size=32, class_mode="categorical")
+
+# 增量训练
+model.fit(train_generator, epochs=5)
+model.save("model.h5")

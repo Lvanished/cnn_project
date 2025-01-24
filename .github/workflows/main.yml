@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: Deploy Application
 
 on:
   push:
@@ -6,29 +6,32 @@ on:
       - main
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Checkout Code
+      uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: 3.9
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v2
 
-      - name: Install dependencies
-        run: |
-          pip install -r app/requirements.txt
+    - name: Log in to DockerHub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Train model
-        run: python train/train.py
+    - name: Build and Push Docker Image
+      run: |
+        docker build -t ${{ secrets.DOCKER_USERNAME }}/cnn_project:latest .
+        docker push ${{ secrets.DOCKER_USERNAME }}/cnn_project:latest
 
-      - name: Build Docker image
-        run: docker build -t my-cnn-app .
-
-      - name: Push to Digital Ocean
-        run: |
-          docker tag my-cnn-app registry.digitalocean.com/myrepo/my-cnn-app:latest
-          docker push registry.digitalocean.com/myrepo/my-cnn-app:latest
+    - name: Deploy to Server
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+        docker pull ${{ secrets.DOCKER_USERNAME }}/cnn_project:latest
+        docker stop cnn_project || true
+        docker rm cnn_project || true
+        docker run -d -p 8000:8000 --name cnn_project ${{ secrets.DOCKER_USERNAME }}/cnn_project:latest
+        EOF

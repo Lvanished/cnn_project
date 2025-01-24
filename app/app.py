@@ -1,60 +1,37 @@
-from fastapi import FastAPI, UploadFile, Form
-from pathlib import Path
-import shutil
-import subprocess
-import os
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from tensorflow.keras.models import load_model
+from PIL import Image
+import numpy as np
 
+# 初始化 FastAPI 应用
 app = FastAPI()
 
-# 配置
-TRAIN_DATA_DIR = "train/data/train"
-MODEL_PATH = "app/model.h5"
-GIT_REPO_DIR = "/path/to/your/project"
-BRANCH_NAME = "main"
+# 加载预训练的 CNN 模型
+try:
+    model = load_model("model.h5")
+except Exception as e:
+    raise RuntimeError(f"无法加载模型: {str(e)}")
 
-# 确保类别目录存在
-def create_category_folder(category: str):
-    category_dir = Path(TRAIN_DATA_DIR) / category
-    category_dir.mkdir(parents=True, exist_ok=True)
-    return category_dir
+# 图像预处理函数
+def preprocess_image(image: Image.Image):
+    image = image.resize((224, 224))  # 假设模型接受 224x224 输入
+    image_array = np.array(image) / 255.0
+    return np.expand_dims(image_array, axis=0)
 
-# 更新 GitHub
-def update_github():
+# 预测接口
+@app.post("/predict/")
+async def predict_image(file: UploadFile = File(...)):
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="文件不是图像格式")
+    
     try:
-        os.chdir(GIT_REPO_DIR)
-        subprocess.run(["git", "add", "train/data/train"], check=True)
-        subprocess.run(["git", "commit", "-m", "Update training data and retrain model"], check=True)
-        subprocess.run(["git", "push", "origin", BRANCH_NAME], check=True)
-        print("GitHub 已更新！")
-    except subprocess.CalledProcessError as e:
-        print(f"Git 操作失败: {e}")
-
-# 更新模型
-def update_model():
-    try:
-        subprocess.run(["python", "train/update_model.py"], check=True)
-        print("模型已更新！")
-    except subprocess.CalledProcessError as e:
-        print(f"模型更新失败: {e}")
-
-@app.post("/upload/")
-async def upload_image(file: UploadFile, category: str = Form(...)):
-    """
-    接收图片并保存到训练集目录，触发模型更新和 GitHub 推送。
-    """
-    try:
-        # 确保类别目录存在
-        category_dir = create_category_folder(category)
-
-        # 保存文件
-        file_path = category_dir / file.filename
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        # 更新模型和 GitHub
-        update_model()
-        update_github()
-
-        return {"message": "文件上传成功，模型和 GitHub 已更新", "path": str(file_path)}
+        # 打开并预处理图像
+        image = Image.open(file.file)
+        input_data = preprocess_image(image)
+        
+        # 模型预测
+        prediction = model.predict(input_data)
+        predicted_class = np.argmax(prediction, axis=1)[0]
+        return {"filename": file.filename, "predicted_class": int(predicted_class)}
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=f"预测失败: {str(e)}")
