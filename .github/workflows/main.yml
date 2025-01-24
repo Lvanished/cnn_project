@@ -1,0 +1,34 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.9
+
+      - name: Install dependencies
+        run: |
+          pip install -r app/requirements.txt
+
+      - name: Train model
+        run: python train/train.py
+
+      - name: Build Docker image
+        run: docker build -t my-cnn-app .
+
+      - name: Push to Digital Ocean
+        run: |
+          docker tag my-cnn-app registry.digitalocean.com/myrepo/my-cnn-app:latest
+          docker push registry.digitalocean.com/myrepo/my-cnn-app:latest
